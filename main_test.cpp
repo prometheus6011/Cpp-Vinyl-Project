@@ -6,28 +6,24 @@
 #define SAMPLE_RATE 44100
 #define FRAMES_PER_BUFFER 512
 
-static void checkErr(PaError err)
-{
+static void checkErr(PaError err) {
     if (err != paNoError) {
         std::cout << "PortAudio error: " << Pa_GetErrorText(err) << std::endl;
         exit(EXIT_FAILURE);
     }
 }
 
-static inline float max(float a, float b)
-{
+static inline float max(float a, float b) {
     return a > b ? a : b;
 }
 
-static inline float abs(float a)
-{
+static inline float abs(float a) {
     return a > 0 ? a : -a;
 }
 
-// This struct holds the input buffers from both devices
 struct AudioData {
-    const float* left_input;
-    const float* right_input;
+    float left_input[FRAMES_PER_BUFFER];  // Buffer for left input
+    float right_input[FRAMES_PER_BUFFER]; // Buffer for right input
 };
 
 // Audio processing callback
@@ -35,24 +31,20 @@ static int paTestCallback(const void* input_buffer, void* output_buffer,
                           unsigned long framesPerBuffer,
                           const PaStreamCallbackTimeInfo* time_info,
                           PaStreamCallbackFlags status_flags,
-                          void* user_data)
-{
+                          void* user_data) {
     AudioData* audio_data = (AudioData*)user_data;
-    const float* left_in = audio_data->left_input;
-    const float* right_in = audio_data->right_input;
     float* out = (float*)output_buffer;
 
     float vol_left = 0;
     float vol_right = 0;
 
-    // Process input and output data
+    // Interleaving left and right channels for stereo output
     for (unsigned long i = 0; i < framesPerBuffer; i++) {
-        vol_left = max(vol_left, abs(left_in[i]));
-        vol_right = max(vol_right, abs(right_in[i]));
+        out[2 * i] = audio_data->left_input[i];  // Left channel
+        out[2 * i + 1] = audio_data->right_input[i];  // Right channel
 
-        // Interleaving left and right channels for stereo output
-        out[2 * i] = left_in[i];  // Left channel
-        out[2 * i + 1] = right_in[i];  // Right channel
+        vol_left = max(vol_left, abs(audio_data->left_input[i]));
+        vol_right = max(vol_right, abs(audio_data->right_input[i]));
     }
 
     // Volume bar display (console visualization)
@@ -79,8 +71,7 @@ static int paTestCallback(const void* input_buffer, void* output_buffer,
     return 0;
 }
 
-int main()
-{
+int main() {
     PaError err;
     err = Pa_Initialize();
     checkErr(err);
@@ -150,19 +141,11 @@ int main()
     checkErr(err);
 
     // Collect input from both devices and process it
-    for (int i = 0; i < 1000; ++i) {
-        const float* left_in;
-        const float* right_in;
-
-        // Get the input buffers
-        err = Pa_ReadStream(leftStream, &left_in, FRAMES_PER_BUFFER);
+    while (true) {  // Use a loop to continuously collect data
+        err = Pa_ReadStream(leftStream, audioData.left_input, FRAMES_PER_BUFFER);  // Read into buffer
         checkErr(err);
-        err = Pa_ReadStream(rightStream, &right_in, FRAMES_PER_BUFFER);
+        err = Pa_ReadStream(rightStream, audioData.right_input, FRAMES_PER_BUFFER);  // Read into buffer
         checkErr(err);
-
-        // Pass the input buffers to the output callback
-        audioData.left_input = left_in;
-        audioData.right_input = right_in;
 
         Pa_Sleep(10);  // Wait for a short time to simulate real-time processing
     }
